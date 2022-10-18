@@ -24,10 +24,6 @@ class AppProperties {}
 class AppState {
   public ChartStates: { [lookup: string]: ChartState };
 
-  public CurrentDevice?: string;
-
-  public DeviceChartStates: { [lookup: string]: ChartState };
-
   public Error?: string;
 
   public Location: {
@@ -43,8 +39,6 @@ class AppState {
 
   constructor() {
     this.ChartStates = {};
-
-    this.DeviceChartStates = {};
 
     this.Location = {
       Data: {},
@@ -70,9 +64,6 @@ export default class App extends React.Component<AppProperties, AppState> {
 
   protected habistackSvcUrl: string;
 
-  protected iotSvcUrl: string;
-
-  protected iotSvcQuery: string;
   protected pointsSvcQuery: string;
 
   protected variablesSvcQuery: string;
@@ -99,36 +90,28 @@ export default class App extends React.Component<AppProperties, AppState> {
 
     this.geocodioSvcUrl = (window as any).LCU.State.GeocodioAPIRoot;
 
-    this.habistackSvcUrl = (window as any).LCU.State.HabistackAPIRoot;
-
-    this.iotSvcQuery = (window as any).LCU.State.IoTAPIQuery;
-
-    this.iotSvcUrl = (window as any).LCU.State.IoTAPIRoot;
+    this.habistackSvcUrl = (window as any).LCU.State.APIRoot;
 
     this.pointsSvcQuery = (window as any).LCU.State.PointAPIQuery;
 
     this.variablesSvcQuery = (window as any).LCU.State.VariablesAPIQuery;
 
-    const selectedVars = (window as any).LCU.State.SelectedVariables || [
-      'WindGust_Surface',
-      'WindSpeed_10Meters',
-      'WindDirection_10Meters',
-      'PrecipitationRate_Surface',
-      'TotalPrecipitation_Surface',
-      'Temperature_Surface',
-    ];
-
     this.state = {
       ...new AppState(),
-      SelectedVariables: selectedVars,
+      SelectedVariables: [
+        'WindGust_Surface',
+        'WindSpeed_10Meters',
+        'WindDirection_10Meters',
+        'PrecipitationRate_Surface',
+        'TotalPrecipitation_Surface',
+        'Temperature_Surface',
+      ],
     };
   }
   //#endregion
 
   //#region Life Cycle
   public componentDidMount() {
-    this.loadIoTData();
-
     this.loadVariablesData();
   }
 
@@ -150,46 +133,38 @@ export default class App extends React.Component<AppProperties, AppState> {
         {variableOptions?.length > 0 ? (
           <div>
             <div>
-              <div>
-                <Input
-                  value={this.state.Location.Name}
-                  onChange={(e) => this.onLocationChange(e)}
-                ></Input>
-              </div>
-
-              <div>
-                <Select<string[]>
-                  multiple
-                  value={this.state.SelectedVariables}
-                  label="Variables"
-                  input={
-                    <OutlinedInput id="select-multiple-chip" label="Chip" />
-                  }
-                  renderValue={(selected) => (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {selected.map((value: any) => (
-                        <Chip
-                          key={value}
-                          label={`${this.state.Variables[value].name} (${this.state.Variables[value].level})`}
-                        />
-                      ))}
-                    </Box>
-                  )}
-                  onChange={(e) => this.onVariableChange(e)}
-                >
-                  {variableOptions}
-                </Select>
-
-                <Button onClick={(e) => this.geocode()}>Load Forecast</Button>
-              </div>
-
-              <div>
-                <Charts charts={this.state.ChartStates}></Charts>
-              </div>
+              <Input
+                value={this.state.Location.Name}
+                onChange={(e) => this.onLocationChange(e)}
+              ></Input>
             </div>
 
             <div>
-              <Charts charts={this.state.DeviceChartStates}></Charts>
+              <Select<string[]>
+                multiple
+                value={this.state.SelectedVariables}
+                label="Variables"
+                input={<OutlinedInput id="select-multiple-chip" label="Chip" />}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value: any) => (
+                      <Chip
+                        key={value}
+                        label={`${this.state.Variables[value].name} (${this.state.Variables[value].level})`}
+                      />
+                    ))}
+                  </Box>
+                )}
+                onChange={(e) => this.onVariableChange(e)}
+              >
+                {variableOptions}
+              </Select>
+
+              <Button onClick={(e) => this.geocode()}>Load Forecast</Button>
+            </div>
+
+            <div>
+              <Charts charts={this.state.ChartStates}></Charts>
             </div>
           </div>
         ) : (
@@ -271,69 +246,6 @@ export default class App extends React.Component<AppProperties, AppState> {
     });
 
     this.loadPointsData(variables, points);
-  }
-
-  protected loadIoTData(): void {
-    const iotApi = `${this.iotSvcUrl}${this.iotSvcQuery}`;
-
-    fetch(iotApi)
-      .then((res) => res.json())
-      .then(
-        (result) => {
-          const payloads = result.Payloads as any[];
-
-          const devicesReadingcharts = payloads.reduce((dr, payload, i) => {
-            const newDr = {
-              ...dr,
-            };
-
-            if (!newDr[payload.DeviceID]) {
-              newDr[payload.DeviceID] = {};
-            }
-
-            const sensorReadings = Object.keys(payload?.SensorReadings || {});
-
-            sensorReadings.forEach((srKey) => {
-              if (!newDr[payload.DeviceID][srKey]) {
-                newDr[payload.DeviceID][srKey] = new ChartState();
-
-                newDr[payload.DeviceID][srKey].Datasets = [
-                  {
-                    id: 1,
-                    label: srKey,
-                    data: [],
-                  },
-                ];
-              }
-
-              const date = new Date(Date.parse(payload?.EventProcessedUtcTime));
-              // const date = new Date(Date.parse(payload?.Timestamp));
-
-              newDr[payload.DeviceID][srKey].Datasets[0].data.unshift({
-                x: date.toLocaleString(),
-                y: payload?.SensorReadings[srKey],
-              });
-            });
-
-            return newDr;
-          }, {});
-
-          const deviceIds = Object.keys(devicesReadingcharts);
-
-          const curDevice = deviceIds[0];
-
-          this.setState({
-            CurrentDevice: curDevice,
-            DeviceChartStates: devicesReadingcharts[curDevice],
-            Error: undefined,
-          });
-        },
-        (error) => {
-          this.setState({
-            Error: error,
-          });
-        }
-      );
   }
 
   protected loadPointsData(variables: any[], points: any[]): void {
